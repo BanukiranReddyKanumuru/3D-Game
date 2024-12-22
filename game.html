@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Platform Game</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #pauseButton {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s;
+        }
+        #pauseButton:hover {
+            background-color: #45a049;
+        }
+        #pauseButton i {
+            position: relative;
+            left: 1px; /* Slight adjustment for visual centering */
+        }
+        #score {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 5px;
+        }
+        #gameTitle {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: green;
+            font-size: 36px;
+            font-family: 'Arial Black', sans-serif;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px 30px;
+            border-radius: 10px;
+            letter-spacing: 2px;
+        }
+        #resetButton {
+            position: fixed;
+            top: 20px;
+            right: 90px; /* Position it to the left of pause button */
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s;
+        }
+        #resetButton:hover {
+            background-color: #cc0000;
+        }
+        #resetButton i {
+            position: relative;
+        }
+        #gameOverScreen {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 2000;
+        }
+        #gameOverScreen h1 {
+            color: #ff4444;
+            font-size: 48px;
+            margin: 0 0 20px 0;
+            font-family: 'Arial Black', sans-serif;
+            text-shadow: 2px 2px 4px rgba(255, 0, 0, 0.5);
+        }
+        #gameOverScreen p {
+            font-size: 24px;
+            margin: 10px 0;
+        }
+        #gameOverScreen button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.3s;
+        }
+        #gameOverScreen button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameTitle">Jumping Jacks</div>
+    <div id="score">Score: 0</div>
+    <button id="resetButton"><i class="fas fa-redo"></i></button>
+    <button id="pauseButton"><i class="fas fa-pause"></i></button>
+    <div id="gameOverScreen">
+        <h1>GAME OVER</h1>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="location.reload()">Play Again</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, player, platform;
+        let obstacles = [];
+        let isJumping = false;
+        let jumpVelocity = 0;
+        const gravity = 0.015;
+        let isPaused = false;
+        let pauseButton;
+        let score = 0;
+        let scoreElement;
+        let obstaclesPassed = new Set();
+        let moveSpeed = 0.05;
+        let playerMinX = -7;  // Left boundary
+        let playerMaxX = -3;  // Right boundary
+        let resetButton;
+        let skybox;
+
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;  // Enable shadows
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;  // Soft shadows
+            document.body.appendChild(renderer.domElement);
+
+            // Create skybox
+            createSkybox();
+
+            // Adjust lighting for better atmosphere
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            // Add directional light for shadows
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 10);
+            directionalLight.castShadow = true;
+            
+            // Adjust shadow properties
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 100;
+            directionalLight.shadow.camera.left = -20;
+            directionalLight.shadow.camera.right = 20;
+            directionalLight.shadow.camera.top = 20;
+            directionalLight.shadow.camera.bottom = -20;
+            scene.add(directionalLight);
+
+            // Add ground plane for better depth perception
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x999999,
+                shininess: 0
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Create platform with better proportions
+            const platformGeometry = new THREE.BoxGeometry(15, 0.3, 2);  // Made even thinner
+            const platformMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x808080,
+                shininess: 100
+            });
+            platform = new THREE.Mesh(platformGeometry, platformMaterial);
+            platform.position.y = -1;
+            platform.receiveShadow = true;  // Platform receives shadows
+            scene.add(platform);
+
+            // Adjust player size and add shadows
+            const playerGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);  // Made into perfect cube
+            const playerMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ff00,
+                shininess: 100
+            });
+            player = new THREE.Mesh(playerGeometry, playerMaterial);
+            player.position.y = 0;
+            player.position.x = -5;
+            player.castShadow = true;  // Player casts shadows
+            player.receiveShadow = true;  // Player can receive shadows
+            scene.add(player);
+
+            // Adjust camera for better view
+            camera.position.z = 7;
+            camera.position.y = 2;
+            camera.lookAt(0, 0, 0);
+
+            // Add pause button functionality
+            pauseButton = document.getElementById('pauseButton');
+            pauseButton.addEventListener('click', () => {
+                isPaused = !isPaused;
+                pauseButton.innerHTML = isPaused ? 
+                    '<i class="fas fa-play"></i>' : 
+                    '<i class="fas fa-pause"></i>';
+                if (!isPaused) {
+                    animate();
+                }
+            });
+
+            // Add reset button functionality
+            resetButton = document.getElementById('resetButton');
+            resetButton.addEventListener('click', () => {
+                location.reload();
+            });
+
+            // Update existing keydown event listener
+            document.addEventListener('keydown', (event) => {
+                if (event.code === 'Space' && !isJumping) {
+                    isJumping = true;
+                    jumpVelocity = 0.2;
+                }
+                if ((event.code === 'ArrowLeft' || event.code === 'KeyA') && 
+                    player.position.x > playerMinX) {
+                    player.position.x -= moveSpeed;
+                }
+                if ((event.code === 'ArrowRight' || event.code === 'KeyD') && 
+                    player.position.x < playerMaxX) {
+                    player.position.x += moveSpeed;
+                }
+                if (event.code === 'KeyP') {
+                    isPaused = !isPaused;
+                    pauseButton.innerHTML = isPaused ? 
+                        '<i class="fas fa-play"></i>' : 
+                        '<i class="fas fa-pause"></i>';
+                    if (!isPaused) {
+                        animate();
+                    }
+                }
+                if (event.code === 'KeyR') {
+                    // Reset camera position
+                    camera.position.set(0, 5, 10);
+                }
+            });
+
+            // Add continuous movement while key is held
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+
+            // Initialize score element
+            scoreElement = document.getElementById('score');
+        }
+
+        // Add key state tracking
+        const keys = {
+            left: false,
+            right: false
+        };
+
+        function handleKeyDown(event) {
+            if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+                keys.left = true;
+            }
+            if (event.code === 'ArrowRight' || event.code === 'KeyD') {
+                keys.right = true;
+            }
+        }
+
+        function handleKeyUp(event) {
+            if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+                keys.left = false;
+            }
+            if (event.code === 'ArrowRight' || event.code === 'KeyD') {
+                keys.right = false;
+            }
+        }
+
+        function createObstacle() {
+            const obstacleGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);  // Made into perfect cube
+            const obstacleMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xff0000,
+                shininess: 100
+            });
+            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+            
+            obstacle.position.x = 8;
+            obstacle.position.y = 0;
+            obstacle.castShadow = true;  // Obstacles cast shadows
+            obstacle.receiveShadow = true;  // Obstacles can receive shadows
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+        }
+
+        function showGameOver() {
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            const finalScoreElement = document.getElementById('finalScore');
+            finalScoreElement.textContent = score;
+            gameOverScreen.style.display = 'block';
+            isPaused = true;
+        }
+
+        function animate() {
+            if (!isPaused) {
+                requestAnimationFrame(animate);
+
+                // Handle continuous movement
+                if (keys.left && player.position.x > playerMinX) {
+                    player.position.x -= moveSpeed;
+                }
+                if (keys.right && player.position.x < playerMaxX) {
+                    player.position.x += moveSpeed;
+                }
+
+                // Handle jumping
+                if (isJumping) {
+                    player.position.y += jumpVelocity;
+                    jumpVelocity -= gravity;
+
+                    if (player.position.y <= 0) {
+                        player.position.y = 0;
+                        isJumping = false;
+                        jumpVelocity = 0; // Reset jump velocity
+                    }
+                }
+
+                obstacles.forEach((obstacle, index) => {
+                    obstacle.position.x -= 0.2;
+
+                    // Check if player has successfully jumped over this obstacle
+                    if (!obstaclesPassed.has(obstacle) && 
+                        obstacle.position.x < player.position.x && 
+                        !isColliding(player, obstacle)) {
+                        score++;
+                        scoreElement.textContent = `Score: ${score}`;
+                        obstaclesPassed.add(obstacle);
+                    }
+
+                    if (obstacle.position.x < -8) {
+                        scene.remove(obstacle);
+                        obstacles.splice(index, 1);
+                        obstaclesPassed.delete(obstacle);
+                    }
+
+                    if (isColliding(player, obstacle)) {
+                        showGameOver();  // Replace alert with game over screen
+                    }
+                });
+
+                // Randomly create new obstacles
+                if (Math.random() < 0.02) {
+                    createObstacle();
+                }
+
+                renderer.render(scene, camera);
+            }
+        }
+
+        function isColliding(player, obstacle) {
+            return Math.abs(obstacle.position.x - player.position.x) < 0.5 &&
+                   Math.abs(obstacle.position.y - player.position.y) < 0.5;
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function createSkybox() {
+            // Create skybox
+            const loader = new THREE.CubeTextureLoader();
+            const texture = loader.load([
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/px.png', // right
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/nx.png', // left
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/py.png', // top
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/ny.png', // bottom
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/pz.png', // front
+                'https://devday2.s3.ap-south-1.amazonaws.com/SnowMountain/nz.png'  // back
+            ]);
+            scene.background = texture;
+
+            // Add fog for depth effect
+            scene.fog = new THREE.Fog(0x87ceeb, 1, 30);
+        }
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
